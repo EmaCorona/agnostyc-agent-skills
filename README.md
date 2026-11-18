@@ -10,7 +10,7 @@ Coordina attività complesse con task dipendenti o paralleli tramite subagenti c
 - **Architettura non bloccante**: prosegue con il default del runtime se parametri specifici non sono esposti o controllabili.
 - **Piano persistente e verifica**: piano salvato atomicamente, snapshot, isolamento e verifica rigorosa di ogni consegna prima dell'integrazione.
 
-### [compact-skill](./compact-skill/SKILL.md)
+### [skill-compactor](./skill-compactor/SKILL.md)
 Compatta altre skill (`SKILL.md` ed eventuali file collegati come `references/`, `examples/`, `resources/`) riducendone lunghezza del testo, token e byte, mantenendo invariati al 100% funzionamento, logica, vincoli e semantica.
 
 ### [task-resolver-auto](./task-resolver-auto/SKILL.md)

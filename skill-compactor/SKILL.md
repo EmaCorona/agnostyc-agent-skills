@@ -1,5 +1,5 @@
 ---
-name: compact-skill
+name: skill-compactor
 description: >-
   Compatta altre skill (file SKILL.md ed eventuali file collegati) riducendone
   lunghezza del testo, token e byte, mantenendo invariati al 100% funzionamento,
@@ -8,7 +8,7 @@ description: >-
   skill esistente.
 ---
 
-# Compact Skill (`compact-skill`)
+# Skill Compactor (`skill-compactor`)
 
 Riduci il peso in byte, caratteri e token dei file di una skill target (`SKILL.md` ed eventuali file collegati come `references/`, `examples/`, `resources/`), mantenendo invariati al 100% comportamento, logica, regole e semantica.
 
