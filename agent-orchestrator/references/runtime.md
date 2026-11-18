@@ -1,58 +1,56 @@
-# Compatibilità del runtime e configurazione dei subagenti (modello leggero + effort: high o default runtime)
+# Compatibilità del runtime e configurazione subagenti
 
-**Leggi ed esegui questa verifica immediatamente all'attivazione della skill** — prima ancora che l'utente formuli la richiesta se invocata senza argomenti, e comunque prima di iniziare la ricognizione del progetto — e riconvalidala dopo cambiamenti di runtime, provider o policy. La skill non installa agenti, non cambia il modello principale e non modifica impostazioni globali.
+**Esegui all'attivazione della skill** — prima della richiesta se invocata senza argomenti e comunque prima della ricognizione — e riconvalida a cambi di runtime, provider o policy. La skill non installa agenti, non cambia il modello principale né le impostazioni globali.
 
 ## Rilevazione immediata all'attivazione
 
-Appena la skill viene attivata (in sola lettura, senza scrivere file su disco e senza esporre segreti), accertati subito di:
+All'attivazione (sola lettura, senza scrivere su disco né esporre segreti), verifica subito:
 
-1. **Strumento di delega disponibile**: controlla lo schema reale dello strumento di delega del runtime (`Agent`, `Task`, `invoke_subagent`, `define_subagent`, `SendMessage` o equivalenti). Non inventare chiamate né parametri non presenti nello schema.
-2. **Parametro `model` esposto**: verifica se lo strumento di delega permette di selezionare il modello e quali valori/tier/versioni espone (es. `flash_lite`, alias leggero o ID modello specifico).
-3. **Parametro `effort` / reasoning esposto**: verifica se lo strumento di delega (o il profilo subagente) espone un parametro per lo sforzo computazionale di ragionamento (`effort`, `reasoning`, `thinking` o equivalente).
-4. **Configurazione locale e override pertinenti**: se hai accesso in lettura a configurazioni locali del runtime o nomi di variabili d'ambiente pertinenti, controllali subito in modo mirato (senza stampare `env` intero né chiavi/segreti) per sapere in anticipo quali parametri sono effettivamente impostabili e quali ricadono sul default del runtime.
+1. **Strumento di delega**: schema reale (`Agent`, `Task`, `invoke_subagent`, `define_subagent`, `SendMessage` o equivalenti). Non inventare chiamate o parametri assenti dallo schema.
+2. **Parametro `model`**: se esposto e valori/tier/versioni accettati (es. `flash_lite`, alias leggero o ID modello).
+3. **Parametro `effort` / reasoning**: se strumento o profilo espone `effort`, `reasoning`, `thinking` o equivalenti.
+4. **Configurazione locale e override**: se leggibili, ispeziona configurazioni locali del runtime e nomi delle sole variabili d'ambiente pertinenti (mai `env` intero né chiavi/segreti) per sapere quali parametri sono impostabili e quali ricadono sul default runtime.
 
-Comunica sinteticamente l'esito di questa rilevazione già al momento dell'attivazione se manca ancora l'obiettivo dell'utente, così che eventuali parametri lasciati al default del runtime siano noti fin da subito e non scoperti dopo la richiesta.
+Se manca l'obiettivo dell'utente, comunica sinteticamente l'esito già all'attivazione.
 
-## Regola di non-interruzione e precedenza di modello ed effort
+## Non-interruzione e precedenza
 
-- **Quando i parametri sono impostabili**: imposta sempre `model` sull'ultima versione disponibile del modello più economico, leggero e veloce esposto dal runtime e imposta `effort: "high"` (o valore massimo equivalente del parametro di reasoning) in ogni delega. Non selezionare mai deliberatamente un modello più pesante/costoso, una versione precedente o un effort inferiore quando il runtime consente di impostare i valori target.
-- **Quando `model` o `effort`/reasoning NON sono impostabili dal modello AI che usa la skill**: **non interrompere e non bloccare mai l'esecuzione**.
-  - Se `effort` / reasoning (o equivalente) non è esposto dallo schema o non può essere impostato, **prosegui normalmente con il default di quando viene staccato il subagente** nel runtime e registra `effort: default runtime (parametro non esposto/impostabile)`.
-  - Se `model` non è esposto dallo schema o non può essere impostato, **prosegui normalmente con il modello di default del subagente** nel runtime e registra `model: default runtime (parametro non esposto/impostabile)`.
-  - Se `model` espone solo un alias di fascia (es. `flash_lite`) senza esporre la versione esatta o la catena di fallback del provider, seleziona comunque quell'alias leggero e **prosegui senza bloccare**, annotando il limite di osservabilità.
-  - Se un override globale del runtime forza un modello o un effort non modificabile dal modello AI che usa la skill, **non bloccare l'esecuzione** e non cambiare silenziosamente le impostazioni globali dell'utente: prosegui con il subagente avviato dal runtime e documenta l'override osservato in `state.md` e nel resoconto finale.
-- **Quando bloccare davvero (`BLOCCATO`)**: marca i task esecutivi `BLOCCATO` **solo** se il runtime non espone alcuna primitiva funzionante per avviare subagenti (delega tecnicamente assente/rotta) o per mancanza di permessi/precondizioni operative.
+- **Parametri impostabili**: imposta `model` sull'ultima versione del modello più economico, leggero e veloce e `effort: "high"` (o massimo equivalente) in ogni delega. Vietato scegliere deliberatamente modelli più pesanti/costosi, versioni precedenti o effort inferiori.
+- **Parametri NON impostabili dal modello AI**: **mai interrompere o bloccare**:
+  - `effort`/reasoning non esposto/impostabile $\rightarrow$ default allo spawn; registra `effort: default runtime (parametro non esposto/impostabile)`.
+  - `model` non esposto/impostabile $\rightarrow$ default allo spawn; registra `model: default runtime (parametro non esposto/impostabile)`.
+  - `model` solo come alias (es. `flash_lite`) senza versione esatta/fallback provider $\rightarrow$ seleziona l'alias, prosegui e annota il limite di osservabilità.
+  - Override globale non modificabile $\rightarrow$ non bloccare né alterare silenziosamente le impostazioni utente; prosegui e documenta l'override in `state.md` e nel resoconto finale.
+- **`BLOCCATO`**: **solo** se manca una primitiva funzionante di avvio subagenti o mancano permessi/precondizioni operative.
 
-Il solo testo del prompt non seleziona tecnicamente né il modello né l'effort nel runtime. Quando supportati dal framework, la risoluzione del modello e dell'effort del subagente segue questo ordine di precedenza (il primo livello attivo prevale):
+Il solo prompt non configura modello o effort nel runtime. Precedenza di risoluzione (il primo livello attivo prevale):
 
-1. **Override d'ambiente o di configurazione globale del runtime**: prevale sui parametri per chiamata e sulla definizione/frontmatter del profilo del subagente. Può nascondere o sovrascrivere `model` o `effort` per singola chiamata. Se è attivo e non modificabile dal modello AI che usa la skill, registralo esplicitamente in `state.md` e prosegui senza bloccare.
-2. **Parametri per invocazione (`model` sul modello più economico, leggero e veloce disponibile + `effort: "high"` / equivalente, se esposti)**: passati esplicitamente nella chiamata allo strumento di delega (`Agent` / `invoke_subagent` o equivalente). Imposta sempre tutti quelli effettivamente esposti dallo schema, per qualunque `subagent_type`.
-3. **Definizione o frontmatter del profilo del subagente**: usato se né l'ambiente né i parametri per invocazione specificano modello o effort.
-4. **Default del runtime / ereditarietà al momento dello spawn**: usato automaticamente dal runtime per i parametri che il modello AI che usa la skill non può impostare. Documenta sempre in `state.md` e nel resoconto finale quali parametri sono stati impostati esplicitamente e quali sono rimasti al default del subagente.
+1. **Override d'ambiente o configurazione globale**: prevale su chiamate e profili; se non modificabile, registralo in `state.md` e prosegui senza bloccare.
+2. **Parametri per invocazione** (`model` leggero ultima versione + `effort: "high"` / equivalente, se esposti): passati allo strumento di delega (`Agent` / `invoke_subagent` o equivalente) per qualunque `subagent_type`.
+3. **Definizione/frontmatter del profilo subagente**: usato se 1 e 2 non specificano modello/effort.
+4. **Default runtime / ereditarietà allo spawn**: usato per parametri non impostabili; documenta in `state.md` e resoconto finale quali sono espliciti e quali di default.
 
-Verifica attraverso gli strumenti e lo schema reali del runtime le capacità effettivamente installate. Consulta la documentazione ufficiale del runtime e del provider in uso relativa ai subagenti quando necessario.
+Verifica capacità tramite strumenti/schema reali e consulta la documentazione ufficiale di runtime e provider se necessario.
 
 ## Profili `subagent_type`, capacità e permessi
 
-Prima di assegnare lavoro, verifica lettura/scrittura, attesa, consegna e arresto. Ai subagenti vengono delegati solo task di esecuzione (`IMPLEMENTAZIONE` e recuperi); analisi e verifica restano all'orchestratore. Seleziona il profilo `subagent_type` più restrittivo e adatto al task:
+Prima di delegare verifica lettura/scrittura, attesa, consegna e arresto. Delega solo esecuzione (`IMPLEMENTAZIONE` e recuperi); analisi e verifica restano all'orchestratore. Usa il profilo più restrittivo adatto:
 
-| Tipologia task | Profilo runtime consigliato | Parametri `model` ed `effort` | Caratteristiche e isolamento |
+| Tipologia task | Profilo consigliato | Parametri `model` ed `effort` | Caratteristiche e isolamento |
 | --- | --- | --- | --- |
-| `IMPLEMENTAZIONE` | `subagent_type: "general-purpose"` (o custom worker equivalente) | Ultima versione disponibile del modello più economico, leggero e veloce + `effort: "high"` (o equivalente) **quando esposti dallo schema**; per i parametri non impostabili si usa il **default del runtime allo spawn** senza mai bloccare | Accesso agli strumenti di scrittura e verifica nel perimetro autorizzato; delega (`Agent` / spawn) disabilitata ai subagenti di primo livello. |
+| `IMPLEMENTAZIONE` | `subagent_type: "general-purpose"` (o custom worker equivalente) | Target esposti (modello leggero ultima versione + `effort: "high"` / equivalente); default allo spawn per non impostabili senza bloccare | Scrittura e verifica nel perimetro; delega (`Agent` / spawn) disabilitata ai subagenti di primo livello. |
 
-- **Foreground vs Background (`run_in_background`)**: un subagente con `run_in_background: true` (o modalità asincrona equivalente) non può chiedere autorizzazioni interattive all'utente (le operazioni non pre-autorizzate vengono negate). Usa `run_in_background: true` solo quando i permessi degli strumenti necessari sono già attivi; un rifiuto immediato dei permessi in background prima di qualsiasi modifica va riconciliato e può usare l'unico reinvio tecnico pre-esecuzione in foreground. Una richiesta di ampliamento del perimetro torna sempre all'orchestratore; non attivare bypass dei permessi.
-- **Restrizione degli strumenti**: quando il runtime o i profili custom permettono di limitare gli strumenti (`tools` / `disallowedTools` o meccanismo equivalente), escludi `Agent` e `Skill` (o gli strumenti di sub-delega) dai worker; per sola lettura usa una allowlist minima (`Read, Grep, Glob` o equivalenti di sola lettura). Non includere shell o MCP mutanti in un profilo dichiarato tecnicamente di sola lettura. Se servono test con shell, esplicita effetti collaterali, esclusione di `<STATE-DIR>` e isolamento. Senza restrizioni sulla shell, dichiara che il divieto di sub-delega tramite CLI è procedurale (imposto dal brief). Non installare automaticamente definizioni di agenti o cambiare impostazioni globali.
-- **Isolamento worktree (`isolation: "worktree"`)**: quando lo strumento di delega (`Agent` o equivalente) viene invocato con `isolation: "worktree"`, il runtime crea un worktree temporaneo da `HEAD` all'avvio (senza modifiche locali staged, unstaged o file non tracciati del workspace principale), lo imposta come `pwd` del subagente e lo rimuove se il subagente termina senza modifiche. Rispetta due regole: 1) se il task richiede input locali non committati, prepara prima un worktree/copia gestito dall'orchestratore con gli input sincronizzati (o trasferisci una patch verificata fuori da `<STATE-DIR>`); 2) con `isolation: "worktree"`, imponi nel brief di risolvere tutti i percorsi rispetto alla propria `pwd` del worktree isolato e di **non scrivere mai** sui percorsi assoluti del repository principale.
+- **`run_in_background`**: in background (`run_in_background: true` o asincrono equivalente) il subagente non può chiedere autorizzazioni interattive (operazioni non pre-autorizzate negate). Usalo solo con permessi già attivi; un rifiuto immediato pre-esecuzione va riconciliato e può usare l'unico reinvio tecnico in foreground. Ampliamenti di perimetro tornano sempre all'orchestratore; vietati bypass dei permessi.
+- **Restrizione strumenti**: se supportato (`tools` / `disallowedTools` o equivalente), escludi `Agent` e `Skill` (o strumenti di sub-delega) dai worker; per sola lettura usa allowlist minima (`Read, Grep, Glob` o equivalenti), mai shell/MCP mutanti. Se servono test con shell, esplicita effetti collaterali, esclusione `<STATE-DIR>` e isolamento. Senza restrizioni shell, dichiara procedurale (da brief) il divieto di sub-delega via CLI. Non installare definizioni agenti né cambiare impostazioni globali.
+- **`isolation: "worktree"`**: crea worktree temporaneo da `HEAD` (senza modifiche locali staged/unstaged/non tracciate), lo imposta come `pwd` e lo rimuove se esce senza modifiche. Regole: 1) se servono input locali non committati, prepara worktree/copia gestito dall'orchestratore con input sincronizzati (o patch verificata fuori da `<STATE-DIR>`); 2) imponi nel brief di risolvere i percorsi rispetto alla `pwd` del worktree isolato e di **non scrivere mai** sui percorsi assoluti del repo principale.
 
 ## Controllo all'attivazione e tracciamento operativo
 
-- Con accesso alla shell, verifica all'attivazione solo i nomi delle variabili d'ambiente pertinenti del runtime/provider (override del modello dei subagenti, flag di forzatura globale, mapping del modello leggero e configurazione di `effort`/reasoning) e i file di configurazione del runtime, senza stampare l'intero ambiente (`env`) per non esporre chiavi o segreti. Senza shell, ispeziona lo schema degli strumenti e i file di configurazione leggibili del runtime e registra che le variabili di processo sono `NON OSSERVABILI SENZA SHELL`.
-- Se alias, mapping, versione esatta o fallback del provider sono osservabili, registrali; se non sono osservabili o non sono configurabili dal modello AI che usa la skill, **non bloccare l'esecuzione** e registra esplicitamente il limite di osservabilità.
-- Non cambiare mai silenziosamente le impostazioni globali dell'utente.
-- Registra in `state.md` e nel resoconto finale la selezione effettivamente configurata (`model` impostato vs `default runtime`, `effort: high` impostato vs `default runtime`) e gli identificativi runtime esposti (anche nelle riprese tramite `resume` o `SendMessage`). Non dichiarare una prova del modello o dell'effort a livello provider se il runtime non la espone.
+- Con shell: controlla solo nomi delle variabili d'ambiente pertinenti (override modello subagenti, flag forzatura globale, mapping modello leggero, `effort`/reasoning) e file di configurazione runtime, mai `env` intero. Senza shell: ispeziona schemi strumenti e config leggibili e registra variabili di processo `NON OSSERVABILI SENZA SHELL`.
+- Registra alias, mapping, versione esatta e fallback se osservabili; altrimenti non bloccare e annota il limite di osservabilità.
+- Non alterare silenziosamente impostazioni globali utente.
+- Registra in `state.md` e resoconto finale la configurazione effettiva (`model` vs `default runtime`, `effort: high` vs `default runtime`) e gli ID runtime esposti (anche su `resume` / `SendMessage`). Non dichiarare prove a livello provider non esposte dal runtime.
 
 ## Installazione e verifica documentale
 
-Mantieni l'intera cartella (`SKILL.md`, `templates/`, `references/`) nella directory delle skill prevista dal runtime o framework di agenti AI in uso, a livello di progetto o utente (`<skills-dir>/agent-orchestrator/`). L'invocazione è `/agent-orchestrator`. Non aggiungere `context: fork` né `model:` al frontmatter di `SKILL.md`. Consulta la documentazione ufficiale delle skill del runtime in uso.
-
-Consulta la documentazione ufficiale aggiornata del runtime e del provider in merito a subagenti, modelli/fallback, parametro `effort`/reasoning e skill quando occorrono conferme. Registra separatamente capacità documentate, configurazione osservata e limiti di osservabilità; imposta sempre modello leggero ultima versione ed `effort: high` quando esposti, proseguendo con il default del subagente per i parametri non impostabili.
+Mantieni `SKILL.md`, `templates/` e `references/` in `<skills-dir>/agent-orchestrator/` (progetto o utente); invocazione `/agent-orchestrator`. Non aggiungere `context: fork` né `model:` al frontmatter di `SKILL.md`. Consulta la documentazione ufficiale di runtime e provider su subagenti, modelli/fallback, `effort`/reasoning e skill quando servono conferme, registrando separatamente capacità documentate, configurazione osservata e limiti di osservabilità.
