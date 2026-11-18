@@ -1,6 +1,6 @@
 # Persistenza, snapshot e recupero
 
-Leggi prima della 1ª mutazione e per ripresa, rollback o invalidazione. Precondizioni operative, non garanzie del solo prompt.
+Leggi prima della 1ª mutazione e per ripresa, rollback, recupero $N \to N+1$ o invalidazione. Precondizioni operative, non garanzie del solo prompt.
 
 ## Identità, percorsi e proprietà
 
@@ -17,6 +17,7 @@ Registra root canonica, `<RUN-ID>`, repo/revisione, proprietario e handle runtim
 Aggiornamento `state.md`:
 - Rinomina atomica stesso filesystem: scrivi `<STATE-DIR>/state.md.tmp`, verifica e sostituisci `<STATE-DIR>/state.md` (`mv`).
 - Solo `Write`/`Edit` nativi senza shell: salva prima ultimo stato valido in `<STATE-DIR>/state.prev.md`, aggiorna `<STATE-DIR>/state.md` e rileggi subito coda anti-troncamento.
+- Se il salvataggio fallisce: ferma nuovi avvii, richiedi arresto scrittori attivi, attendi conferma, conserva handle ed evidenze in chat e riconcilia prima di riprendere.
 
 ## Snapshot e manifest
 
@@ -25,11 +26,18 @@ Prima della 1ª scrittura, e per nuovi percorsi autorizzati prima di tentativi s
 1. Registra per percorso operazione (`crea`, `modifica`, `elimina`, `rinomina` origine/destinazione), inclusi output/cache controlli. File ignorati da Git non sono sacrificabili.
 2. Verifica percorsi vs root: rifiuta `..` e destinazioni esterne. Controlla alias, hard link modificabili e symlink nelle dir antenate; non seguire symlink in copie/ripristini (tratta symlink come oggetto, non target). Per hard link isola o verifica tutti gli alias prima di autorizzare.
 3. Registra in `manifest.md`: presenza/assenza (anche symlink spezzati, es. `test -L`; assenza esplicita `assente`), tipo, hash o target link, permessi e copia in `files/`, `gen-base/` o `base/`. Per dir registra solo quelle create dalla sessione e contenuto attribuibile.
-4. `backups/baseline/files/` conserva stato pre-modifica (per file preesistenti aggiunti dopo, acquisisci baseline prima della 1ª mutazione annotando ingresso). `gen-base/` conserva input prima di `<GEN>`. `attempts/<ATTEMPT-ID>/base/` conserva stato pre-tentativo: per `iniziale` coincide con `gen-base/`; tra tentativo fallito $N$ e recupero $N+1$ esegui **prima** rollback selettivo soli file difettosi di $N$ (salva in `attempts/<N>/discarded/`, ripristina da `attempts/<N>/base/`), preservando modifiche valide, **poi** fotografa `attempts/<N+1>/base/` prima di avviare $N+1$. Mai sovrascrivere snapshot precedenti.
+4. `backups/baseline/files/` conserva stato pre-modifica (per file preesistenti aggiunti dopo, acquisisci baseline prima della 1ª mutazione annotando ingresso). `gen-base/` conserva input prima di `<GEN>`. `attempts/<ATTEMPT-ID>/base/` conserva stato pre-tentativo (`iniziale` = `gen-base/`). Mai sovrascrivere snapshot precedenti.
 5. Usa copie verificate byte/hash e metadati necessari; mai hard link come backup di modificabili. Se symlink o metadati non preservabili, isola task o blocca mutazione.
 6. Conferma input invariati durante snapshot. Salva manifest e intenzione in `state.md` prima della delega (se incompleti, non avviare). Se perimetro, requisiti o input cambiano esternamente durante un tentativo, arresta scrittore e aggiorna autorizzazioni, snapshot e brief prima di proseguire.
 
 A fine tentativo registra inventario e impronte finali confrontando prima/dopo aree interessate, inclusi ignorati nei perimetri ed esclusi `.git/`, `<STATE-DIR>` (`git status --porcelain --ignored -- ':!.orchestration'`, `find . -path './.orchestration' -prune -o ...`) e dipendenze massive fuori perimetro (`node_modules/`, `.venv/`, `target/`, verificando integrità top-level), o usa filesystem isolato; documenta limiti osservabilità. Non copiare interi repo, dipendenze o segreti.
+
+## Sequenza recupero $N \to N+1$, subentro e `SBLOCCO CIRCOSCRITTO`
+
+- **Sequenza $N \to N+1$**: 1) Diagnostica causa e aggiorna brief (mai chiamate identiche); 2) Rollback selettivo dei soli file difettosi di $N$ (salva in `attempts/<N>/discarded/`, ripristina da `attempts/<N>/base/`), preservando lavoro parziale valido; 3) Per ogni nuovo file preesistente entrato nel perimetro, acquisisci prima `baseline/files/`; 4) Fotografa stato risultante in `attempts/<N+1>/base/` e `manifest.md` prima di avviare $N+1$.
+- **Subentro** (se subagente precedente non riattivabile per handle perso/ripresa non supportata, accertato/registrato, arresto confermato o nessuna scrittura in corso): avvia nuovo subagente di subentro (configurazione target/default allo spawn) dedicato allo stesso `TASK-ID` — nuovo unico titolare per recuperi successivi — compilando nel brief tutte le sezioni di [incarico subagente](../templates/subagent-brief.md) (`Solo per subentro`: motivo, stato attuale su disco vs base, lavoro valido da conservare, difetti aperti, cosa resta, senza codice risolutivo). Non azzera il contatore (consuma il prossimo recupero). L'orchestratore non sostituisce il subagente perso; se delega non più avviabile, `BLOCCATO`.
+- **Reinvio tecnico pre-esecuzione**: per errori certamente pre-esecuzione (es. rifiuto immediato `run_in_background: true` per permessi non pre-autorizzati) è ammesso 1 solo reinvio tecnico registrato; se avvio incerto, riconcilia prima.
+- **Procedura `SBLOCCO CIRCOSCRITTO` (`INT-ID`)**: dopo esaurimento `iniziale` + 5 recuperi (`INCOMPLETO`), esegui snapshot in `backups/integrations/<INT-ID>/base/` e `manifest.md`, applica il solo fix limitato ai difetti residui verificati ed esegui verifiche dirette. Pass $\rightarrow$ `VERIFICATO`; fail $\rightarrow$ salva in `discarded/`, esegui rollback selettivo delle sole modifiche dell'`INT-ID` (o conservazione se valide e documentate), lascia task `INCOMPLETO` senza altri tentativi e riporta difetti residui, specifiche violate, evidenze e condizione per riprendere.
 
 ## Ripresa e avvii incerti
 
